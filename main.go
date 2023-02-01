@@ -1,19 +1,21 @@
 package main
 
 import (
+	"embed"
 	"flag"
-	"os"
-
-	gohttp "net/http"
-
 	"github.com/gorilla/pat"
-	"github.com/ian-kent/go-log/log"
-	"github.com/mailhog/MailHog-UI/assets"
-	"github.com/mailhog/MailHog-UI/config"
-	"github.com/mailhog/MailHog-UI/web"
-	comcfg "github.com/mailhog/MailHog/config"
-	"github.com/mailhog/http"
+	comcfg "github.com/jphautin/MailHog/config"
+	"github.com/jphautin/mailhog-gui/config"
+	"github.com/jphautin/mailhog-gui/web"
+	"log"
+	gohttp "net/http"
+	"os"
 )
+
+// content holds our static web server content.
+//
+//go:embed assets/*
+var content embed.FS
 
 var conf *config.Config
 var comconf *comcfg.Config
@@ -35,14 +37,14 @@ func main() {
 	// FIXME need to make API URL configurable
 
 	if comconf.AuthFile != "" {
-		http.AuthFile(comconf.AuthFile)
+		web.AuthFile(comconf.AuthFile)
 	}
 
 	exitCh = make(chan int)
 	cb := func(r gohttp.Handler) {
-		web.CreateWeb(conf, r.(*pat.Router), assets.Asset)
+		web.CreateWeb(conf, r.(*pat.Router), content)
 	}
-	go http.Listen(conf.UIBindAddr, assets.Asset, exitCh, cb)
+	go web.Listen(conf.UIBindAddr, cb)
 
 	for {
 		select {

@@ -4,6 +4,18 @@
   </button>
 
   <span class="pull-right">
+    <select ng-model="field" ng-change="updateSortingField(field)">
+        <option value="time">time</option>
+        <option value="size">size</option>
+        <option value="from">sender</option>
+        <option value="to">recipient</option>
+    </select>
+
+    <select ng-model="order" ng-change="updateSortingOrder(order)">
+        <option value="desc">descending</option>
+        <option value="asc">ascending</option>
+    </select>
+
     <span class="message-count" ng-if="(totalMessages || 0) != 0">
       <select ng-model="itemsPerPage" ng-change="showUpdated(itemsPerPage)">
         <option value="10">10</option>

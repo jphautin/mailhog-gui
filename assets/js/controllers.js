@@ -51,6 +51,9 @@ mailhogApp.controller('MailCtrl', function ($scope, $http, $sce, $timeout) {
   $scope.itemsPerPage = 50
   $scope.startIndex = 0
 
+  $scope.field = "time"; //time,from,to,size
+  $scope.order = "desc"; //desc,asc
+
   if(typeof(Storage) !== "undefined") {
       $scope.itemsPerPage = parseInt(localStorage.getItem("itemsPerPage"), 10)
       if(!$scope.itemsPerPage) {
@@ -265,21 +268,22 @@ mailhogApp.controller('MailCtrl', function ($scope, $http, $sce, $timeout) {
     return e;
   }
 
-  $scope.messagesDisplayed = function() {
+  $scope.messagesDisplayed = function () {
     return $('.messages .msglist-message').length
   }
 
-  $scope.refresh = function() {
+  $scope.refresh = function () {
     if ($scope.searching) {
       return $scope.refreshSearch();
     }
     var e = $scope.startEvent("Loading messages", null, "glyphicon-download");
     var url = $scope.host + 'api/v2/messages'
-    if($scope.startIndex > 0) {
+    if ($scope.startIndex > 0) {
       url += "?start=" + $scope.startIndex + "&limit=" + $scope.itemsPerPage;
     } else {
       url += "?limit=" + $scope.itemsPerPage;
     }
+    url+= "&field=" + $scope.field + "&order=" + $scope.order;
     $http.get(url).success(function(data) {
       $scope.messages = data.items;
       $scope.totalMessages = data.total;
@@ -377,23 +381,33 @@ mailhogApp.controller('MailCtrl', function ($scope, $http, $sce, $timeout) {
 	  pat = str.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1");
           h = h.replace(new RegExp(pat, 'g'), data.$cidMap[c])
         }
-	      data.previewHTML = $sce.trustAsHtml(h);
-  		  $scope.preview = data;
-  		  preview = $scope.cache[message.ID];
-        //reflow();
-        e.done();
-	    });
-	   }
+          data.previewHTML = $sce.trustAsHtml(h);
+          $scope.preview = data;
+          preview = $scope.cache[message.ID];
+          //reflow();
+          e.done();
+        });
+    }
   }
 
-  $scope.toggleHeaders = function(val) {
+  $scope.updateSortingField = function (field) {
+    $scope.field=field;
+    $scope.refresh();
+  }
+
+  $scope.updateSortingOrder = function (order) {
+    $scope.order=order;
+    $scope.refresh();
+  }
+
+  $scope.toggleHeaders = function (val) {
     $scope.previewAllHeaders = val;
-    $timeout(function(){
+    $timeout(function () {
       $scope.resizePreview();
     }, 0);
-    var t = window.setInterval(function() {
-      if(val) {
-        if($('#hide-headers').length) {
+    var t = window.setInterval(function () {
+      if (val) {
+        if ($('#hide-headers').length) {
           window.clearInterval(t);
           //reflow();
         }

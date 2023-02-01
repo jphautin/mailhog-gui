@@ -2,15 +2,19 @@ package web
 
 import (
 	"bytes"
+	"embed"
+	"github.com/ian-kent/go-log/log"
+	"golang.org/x/crypto/bcrypt"
 	"html/template"
-	"log"
+	"io"
 	"mime"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/gorilla/pat"
-	"github.com/mailhog/MailHog-UI/config"
+	"github.com/jphautin/mailhog-gui/config"
 )
 
 var APIHost string
@@ -21,17 +25,111 @@ type Web struct {
 	asset  func(string) ([]byte, error)
 }
 
-func CreateWeb(cfg *config.Config, r http.Handler, asset func(string) ([]byte, error)) *Web {
+// AuthFile sets Authorised to a function which validates against file
+func AuthFile(file string) {
+	users = make(map[string]string)
+
+	b, err := os.ReadFile(file)
+	if err != nil {
+		log.Fatal("[HTTP] Error reading auth-file: %s", err)
+		// FIXME - go-log
+		os.Exit(1)
+	}
+
+	buf := bytes.NewBuffer(b)
+
+	for {
+		l, err := buf.ReadString('\n')
+		l = strings.TrimSpace(l)
+		if len(l) > 0 {
+			p := strings.SplitN(l, ":", 2)
+			if len(p) < 2 {
+				log.Fatal("[HTTP] Error reading auth-file, invalid line: %s", l)
+				// FIXME - go-log
+				os.Exit(1)
+			}
+			users[p[0]] = p[1]
+		}
+		switch {
+		case err == io.EOF:
+			break
+		case err != nil:
+			log.Fatal("[HTTP] Error reading auth-file: %s", err)
+			// FIXME - go-log
+			os.Exit(1)
+		}
+		if err == io.EOF {
+			break
+		} else if err != nil {
+		}
+	}
+
+	log.Info("[HTTP] Loaded %d users from %s", len(users), file)
+
+	Authorised = func(u, pw string) bool {
+		hpw, ok := users[u]
+		if !ok {
+			return false
+		}
+
+		err := bcrypt.CompareHashAndPassword([]byte(hpw), []byte(pw))
+		if err != nil {
+			return false
+		}
+
+		return true
+	}
+}
+func Listen(httpBindAddr string, registerCallback func(http.Handler)) {
+	log.Info("[HTTP] Binding to address: %s", httpBindAddr)
+
+	vpat := pat.New()
+	registerCallback(vpat)
+
+	//compress := handlers.CompressHandler(pat)
+	auth := BasicAuthHandler(vpat) //compress)
+
+	err := http.ListenAndServe(httpBindAddr, auth)
+	if err != nil {
+		log.Fatal("[HTTP] Error binding to address %s: %s", httpBindAddr, err)
+	}
+}
+
+var Authorised func(string, string) bool
+var users map[string]string
+
+// BasicAuthHandler is middleware to check HTTP Basic Authentication
+// if an authorisation function is defined.
+func BasicAuthHandler(h http.Handler) http.Handler {
+	f := func(w http.ResponseWriter, req *http.Request) {
+		if Authorised == nil {
+			h.ServeHTTP(w, req)
+			return
+		}
+
+		u, pw, ok := req.BasicAuth()
+		if !ok || !Authorised(u, pw) {
+			w.Header().Set("WWW-Authenticate", "Basic")
+			w.WriteHeader(401)
+			return
+		}
+		h.ServeHTTP(w, req)
+	}
+
+	return http.HandlerFunc(f)
+}
+
+func CreateWeb(cfg *config.Config, r http.Handler, content embed.FS) *Web {
 	web := &Web{
 		config: cfg,
-		asset:  asset,
+		asset:  content.ReadFile,
 	}
 
 	pat := r.(*pat.Router)
 
 	WebPath = cfg.WebPath
 
-	log.Printf("Serving under http://%s%s/", cfg.UIBindAddr, WebPath)
+	log.Info("Serving under http://%s%s/", cfg.UIBindAddr, WebPath)
 
 	pat.Path(WebPath + "/images/{file:.*}").Methods("GET").HandlerFunc(web.Static("assets/images/{{file}}"))
 	pat.Path(WebPath + "/css/{file:.*}").Methods("GET").HandlerFunc(web.Static("assets/css/{{file}}"))
@@ -50,10 +148,14 @@ func (web Web) Static(pattern string) func(http.ResponseWriter, *http.Request) {
 
 			w.Header().Set("Content-Type", mime.TypeByExtension(ext))
 			w.WriteHeader(200)
-			w.Write(b)
+			_, err := w.Write(b)
+			if err != nil {
+				log.Warn("error sending file %s", fp)
+				return
+			}
 			return
 		}
-		log.Printf("[UI] File not found: %s", fp)
+		log.Info("[UI] File not found: %s", fp)
 		w.WriteHeader(404)
 	}
 }
@@ -64,12 +166,12 @@ func (web Web) Index() func(http.ResponseWriter, *http.Request) {
 
 	asset, err := web.asset("assets/templates/index.html")
 	if err != nil {
-		log.Fatalf("[UI] Error loading index.html: %s", err)
+		log.Fatal("[UI] Error loading index.html: %s", err)
 	}
 
 	tmpl, err = tmpl.Parse(string(asset))
 	if err != nil {
-		log.Fatalf("[UI] Error parsing index.html: %s", err)
+		log.Fatal("[UI] Error parsing index.html: %s", err)
 	}
 
 	layout := template.New("layout.html")
@@ -77,12 +179,12 @@ func (web Web) Index() func(http.ResponseWriter, *http.Request) {
 
 	asset, err = web.asset("assets/templates/layout.html")
 	if err != nil {
-		log.Fatalf("[UI] Error loading layout.html: %s", err)
+		log.Fatal("[UI] Error loading layout.html: %s", err)
 	}
 
 	layout, err = layout.Parse(string(asset))
 	if err != nil {
-		log.Fatalf("[UI] Error parsing layout.html: %s", err)
+		log.Fatal("[UI] Error parsing layout.html: %s", err)
 	}
 
 	return func(w http.ResponseWriter, req *http.Request) {
@@ -114,6 +216,9 @@ func (web Web) Index() func(http.ResponseWriter, *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(200)
-		w.Write(b.Bytes())
+		_, err = w.Write(b.Bytes())
+		if err != nil {
+			return
+		}
 	}
 }

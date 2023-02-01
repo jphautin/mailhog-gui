@@ -2,7 +2,6 @@ package config
 
 import (
 	"flag"
-
 	"github.com/ian-kent/envconf"
 )
 
