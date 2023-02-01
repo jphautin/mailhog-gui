@@ -119,7 +119,12 @@ func BasicAuthHandler(h http.Handler) http.Handler {
 	return http.HandlerFunc(f)
 }
 
-func CreateWeb(cfg *config.Config, r http.Handler, content embed.FS) *Web {
+// content holds our static web server content.
+//
+//go:embed assets/*
+var content embed.FS
+
+func CreateWeb(cfg *config.Config, r http.Handler) *Web {
 	web := &Web{
 		config: cfg,
 		asset:  content.ReadFile,

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"embed"
 	"flag"
 	"github.com/gorilla/pat"
 	comcfg "github.com/jphautin/MailHog/config"
@@ -11,11 +10,6 @@ import (
 	gohttp "net/http"
 	"os"
 )
-
-// content holds our static web server content.
-//
-//go:embed assets/*
-var content embed.FS
 
 var conf *config.Config
 var comconf *comcfg.Config
@@ -42,7 +36,7 @@ func main() {
 
 	exitCh = make(chan int)
 	cb := func(r gohttp.Handler) {
-		web.CreateWeb(conf, r.(*pat.Router), content)
+		web.CreateWeb(conf, r.(*pat.Router))
 	}
 	go web.Listen(conf.UIBindAddr, cb)
 
